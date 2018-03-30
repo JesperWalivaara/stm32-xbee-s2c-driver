@@ -71,7 +71,7 @@ void platformDelayUs(uint32_t udelay)
  *	@return true if data was read, false otherwise
  *
  */
-bool readAvailableData(UART_HandleTypeDef *huart, buffer *tmp)
+bool readAvailableData(UART_HandleTypeDef *huart, buffer *secbuf)
 {
 	//TODO: Tweak timeout values
 	uint32_t timeout_usmax = 10;
@@ -97,7 +97,7 @@ bool readAvailableData(UART_HandleTypeDef *huart, buffer *tmp)
 		}
 
 		uint16_t cnt = huart->RxXferSize-huart->RxXferCount;
-		tmp->datacnt = cnt;
+		secbuf->datacnt = cnt;
 		HAL_UART_AbortReceive_IT(huart);
 		while(huart->RxState != HAL_UART_STATE_READY)
 		{
@@ -106,7 +106,7 @@ bool readAvailableData(UART_HandleTypeDef *huart, buffer *tmp)
 
 		// Copy over to secondary buffer and re-enable interrupts
 		for (int i = 0; i < cnt; ++i) {
-			tmp->data[i] = *((huart->pRxBuffPtr-cnt)+i);
+			secbuf->data[i] = *((huart->pRxBuffPtr-cnt)+i);
 		}
 		HAL_UART_Receive_IT(huart, (uint8_t*)(huart->pRxBuffPtr-cnt), 200);
 
@@ -117,16 +117,16 @@ bool readAvailableData(UART_HandleTypeDef *huart, buffer *tmp)
 
 
 /**
- * 	Basic terminal. Will echo typed characters
- * 	back to configured UART when they are added to a command.
- * 	Will process said command when carriage return is sent.
- * 	Lastly it will also erase characters from a command when
- * 	backspace is sent.
+ * 	Basic terminal behavior on character input.
+ * 	Will echo typed characters back to configured UART when
+ * 	they are added to a command. Will process said command when
+ * 	carriage return is sent. Lastly it will also erase characters
+ * 	from a command when	backspace is sent.
  *
  *	@param *inp, received char(s) for terminal to handle
  *
  */
-void terminalHandleInput(buffer *inp)
+void handleTerminalInput(buffer *inp)
 {
 	char last = inp->data[inp->datacnt-1];
 

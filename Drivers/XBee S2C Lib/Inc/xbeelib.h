@@ -30,22 +30,17 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
  * MODIFY TO FIT YOUR APPLICATION
  */
 
-// Micro-controller data connection to Xbee (only one true!)
-#define XBEE_IS_USING_SPI 0
-#define XBEE_IS_USING_UART 1
+#define MAX_STORED_DEVICES 5
 
-//Remote xbees?
-//Local xbees?
-//settings?
-//List of xbees? use cases?
-
-
-
-
+typedef enum {
+	XBEE_OK = 0x0,
+	XBEE_UART_FAILED_SYNC = 0x1,
+	XBEE_GET_LOCAL_SETTINGS_FAILURE = 0x2
+} XBEE_STAT;
 
 /*
  * This struct contains storage locations for
- * all of the different Xbee settings. They have been ordered
+ * all of the different Xbee settings. They have been listed
  * exactly as specified in the user manual.
  *
  * Refer to the document "XBee/Xbee-PRO S2C 802.15.4 RF Module User Guide"
@@ -86,7 +81,7 @@ typedef struct {
 	// CMD: AS (Beacon request)
 	// CMD: ED (Energy Detect)
 	uint8_t EE;		// Encryption Enable
-	uint8_t KY;		// AES Encryption Key
+	// CMD: KY (AES Encryption Key, write only)
 	uint8_t NI[20];	// Node Identifier
 
 	// +++ RF Interfacing Commands +++
@@ -159,26 +154,24 @@ typedef struct {
 	// CMD:	DD	(Digi Device Type Identifier)
 
 	// +++ Command Mode Options +++
-	uint16_t CT;	// Command Mode Timeout
+	uint16_t CT;	// Command Mode Timeout (x100 ms)
 	// CMD: CN	(Exit Command Mode)
 	// CMD: AC	(Apply Changes)
-	uint16_t GT;	// Silence Period
+	uint16_t GT;	// Silence Period (x1 ms)
 	uint8_t CC;		// Command Character
 } xbee_settings;
 
 
 typedef struct {
-	bool isLocal;			// Is device local?
-	bool isUsingUART;		// Is device using UART?
-	bool isUsingSPI;		// Is device using SPI?
+	UART_HandleTypeDef *hxbee;
 	xbee_settings settings;	// Xbee device settings
-} xbee;
+} xbee_module;
 
-/*
- * SETTINGS VERIFICATION
- */
-#if !(XBEE_IS_USING_SPI ^ XBEE_IS_USING_UART)
-#error Incorrectly defined data interface to the Xbee!
-#endif
+bool isCoordinator(xbee_module *xbee);
+void xbeeSetDefaultValues(xbee_module *xbee);
+bool xbeeSyncUART();
+bool xbeeGetLocalSettings();
+XBEE_STAT xbeeInit();
+void xbeeEnterCMDMode();
 
 #endif /* XBEE_S2C_LIB_INC_XBEELIB_H_ */

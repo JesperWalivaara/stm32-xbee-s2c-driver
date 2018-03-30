@@ -26,7 +26,7 @@ typedef struct {
 void platformDelayUs(uint32_t udelay);
 bool readAvailableData(UART_HandleTypeDef *huart, buffer *tmp);
 
-void terminalHandleInput(buffer *inp);
+void handleTerminalInput(buffer *inp);
 void termInit(uint8_t *storage, uint16_t size, UART_HandleTypeDef *huart);
 
 // Public
