@@ -24,6 +24,8 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 // any additional devices will be remote nodes
 xbee_module xbee[MAX_STORED_DEVICES];
 
+uint32_t baudrates[9] = {1200, 2400, 4800, 9600, 19200, 38400,
+						 57600, 115200, 230400};
 
 // use XBEE_IS_USING_SPI, XBEE_IS_USING_UART
 
@@ -52,22 +54,15 @@ XBEE_STAT xbeeInit(UART_HandleTypeDef *hxbee)
 	// Synchronize UART with the local Xbee module
 	if(xbeeSyncUART())
 	{
-		// Fetch local Xbee module's settings
-		if(xbeeGetLocalSettings())
-		{
-
-		}
-		else
-		{
-			return XBEE_GET_LOCAL_SETTINGS_FAILURE;
-		}
+		// Ensure that API Mode will be enabled
+		return xbeeEnsureAPIMode();
 	}
 	else
 	{
-		return XBEE_UART_FAILED_SYNC;
+		return XBEE_ERR_UART_SYNC;
 	}
 
-	return XBEE_OK;
+	return XBEE_MSG_OK;
 }
 
 /*
@@ -170,25 +165,106 @@ void xbeeSetDefaultValues(xbee_module *xbee)
 
 bool xbeeSyncUART()
 {
-	// Check at current baud
-	// 1. Send ATBD, is rec = uart?
-	// 2. no? continue function
-	// 3. yes? save val, then exit function
+	uint8_t rec[10];
+	buffer recbuf;
+	recbuf.data = rec;
+	recbuf.size = 10;
+	recbuf.datacnt = 0;
 
-	//if fail some error code should be present
+	for(int i = 0; i < recbuf.size; ++i)
+	{
+		rec[i] = 0x0;
+	}
 
-	// loop through list of "standard" rates
-	// LOOP:
-	// 1. Send ATBD, is rec = uart?
-	// 2. no? go to next one
-	// 3. yes? save val, then exit function
-	return true;
+	// Attempt to enter command mode (with current baud)
+	xbeeEnterCMDMode();
+	readAvailableData(xbee[0].hxbee, &recbuf);
+
+	if(!strncmp((char *)recbuf.data, "OK", 2) && recbuf.datacnt > 0)
+	{
+		// Xbee replied sucessfully!
+		xbeeExitCMDMode();
+		return true;
+	}
+
+	// Previous attempt was unsuccessful, start looping through preset
+	// list of baud rates.
+	/*for (int i = 0; i < sizeof(baudrates)/sizeof(uint32_t); ++i)
+	{
+		xbee[0].hxbee->Init.BaudRate = baudrates[i];
+		HAL_UART_Init(xbee[0].hxbee);
+
+		xbeeEnterCMDMode();
+		readAvailableData(xbee[0].hxbee, &recbuf);
+
+			if(!strncmp((char *)recbuf.data, "OK", 2) && recbuf.datacnt > 0)
+			{
+				xbeeExitCMDMode();
+				return true;
+			}
+
+	}*/
+	for (int i = sizeof(baudrates)/sizeof(uint32_t)-1; i >= 0 ; --i)
+	{
+		xbee[0].hxbee->Init.BaudRate = baudrates[i];
+		HAL_UART_Init(xbee[0].hxbee);
+
+		xbeeEnterCMDMode();
+		readAvailableData(xbee[0].hxbee, &recbuf);
+		if(!strncmp((char *)recbuf.data, "OK", 2) && recbuf.datacnt > 0)
+		{
+			xbeeExitCMDMode();
+			return true;
+		}
+	}
+	return false;
 }
 
 
-bool xbeeGetLocalSettings()
+XBEE_STAT xbeeEnsureAPIMode()
 {
-	return true;
+	//TODO: Xbee seemingly responds with "OK" when ATAP is sent???? Instead of the parameter value.
+	buffer tmp;
+	volatile uint8_t rec[20];
+	tmp.data = rec;
+	tmp.size = 20;
+	tmp.datacnt = 0;
+
+	char xbeecmd[20];
+	uint16_t len = sprintf(xbeecmd, "ATAP\r");
+	HAL_UART_Transmit(xbee[0].hxbee, xbeecmd, len, 100);
+	HAL_Delay(200);
+	readAvailableData(xbee[0].hxbee, &tmp);
+	HAL_Delay(200);
+	HAL_Delay(200);
+
+	// AP = 0x1 means API Mode without escape characters is active
+	if(!strncmp(tmp.data, 0x1, 1) && tmp.datacnt > 0)
+	{
+		return XBEE_MSG_OK;
+	}
+
+	// API Mode must be configured!
+	len = sprintf(xbeecmd, "ATAP%c\r", 0x1);
+	//HAL_UART_Transmit(xbee[0].hxbee, xbeecmd, len, 100);
+	readAvailableData(xbee[0].hxbee, &tmp);
+
+	if(!strncmp(tmp.data, "OK", 2) && tmp.datacnt > 0)
+	{
+		// Save to non-volatile memory
+		len = sprintf(xbeecmd, "ATWR\r");
+		HAL_UART_Transmit(xbee[0].hxbee, xbeecmd, len, 100);
+
+		if(!strncmp(tmp.data, "OK", 2) && tmp.datacnt > 0)
+		{
+			// Perform a software reset
+			len = sprintf(xbeecmd, "ATFR\r");
+			HAL_UART_Transmit(xbee[0].hxbee, xbeecmd, len, 100);
+		}
+		return XBEE_MSG_SETTING_CHANGED;
+	}
+
+	return XBEE_ERR_APIMODE_ENABLE;
 }
 
 /*
@@ -202,11 +278,22 @@ bool xbeeGetLocalSettings()
  */
 void xbeeEnterCMDMode()
 {
+	//TODO: Clean up?
 	uint8_t tmp = xbee[0].settings.CC;
 	uint8_t cmdsequence[3] = {tmp,tmp,tmp};
 
 	// GT + 3xCC + GT
-	HAL_Delay(xbee[0].settings.GT);
+	//HAL_UART_Transmit(xbee[0].hxbee, 0, 1, 10);
+	HAL_Delay(xbee[0].settings.GT+50);
 	HAL_UART_Transmit(xbee[0].hxbee, cmdsequence, 3, 10);
-	HAL_Delay(xbee[0].settings.GT);
+	HAL_Delay(xbee[0].settings.GT+50);
+}
+
+/*
+ * Makes the local Xbee module exit command mode.
+ */
+void xbeeExitCMDMode()
+{
+	uint8_t cmdsequence[5] = {'A','T','C','N','\r'};
+	HAL_UART_Transmit(xbee[0].hxbee, cmdsequence, 5, 10);
 }

@@ -1,13 +1,26 @@
 /*
- * miscfunc.c
- *
- *  Created on: 22 mars 2018
- *      Author: Jesper
- */
+Copyright 2018 Jesper Wälivaara
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished to
+do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies
+or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
 
 #include "miscfunc.h"
 
-pbuffer termCmdBuf;
+buffer *termCmdBuf;
 UART_HandleTypeDef *hterm;
 
 /**
@@ -18,15 +31,9 @@ UART_HandleTypeDef *hterm;
  *	@param *huart, STM32 HAL UART handle for the terminal tx/rx
  *
  */
-void termInit(uint8_t *storage, uint16_t size, UART_HandleTypeDef *huart)
+void termInit(buffer *termdatabuf, UART_HandleTypeDef *huart)
 {
-	termCmdBuf.data = storage;
-	termCmdBuf.size = size;
-	termCmdBuf.datacnt = 0;
-	for (int i = 0; i < size; ++i)
-	{
-		termCmdBuf.data[i] = 0;
-	}
+	termCmdBuf = termdatabuf;
 	hterm = huart;
 
 	char msg[50];
@@ -67,7 +74,7 @@ void platformDelayUs(uint32_t udelay)
  *	and utilizes a timeout process to terminate data reception.
  *
  *	@param *huart, STM HAL library handle for target uart interface
- *	@param *tmp, pointer to the temporary storage buffer
+ *	@param *secbuf, pointer to the secondary storage buffer
  *	@return true if data was read, false otherwise
  *
  */
@@ -97,20 +104,29 @@ bool readAvailableData(UART_HandleTypeDef *huart, buffer *secbuf)
 		}
 
 		uint16_t cnt = huart->RxXferSize-huart->RxXferCount;
-		secbuf->datacnt = cnt;
 		HAL_UART_AbortReceive_IT(huart);
 		while(huart->RxState != HAL_UART_STATE_READY)
 		{
 			// Wait for abort process to complete.
 		}
 
-		// Copy over to secondary buffer and re-enable interrupts
-		for (int i = 0; i < cnt; ++i) {
-			secbuf->data[i] = *((huart->pRxBuffPtr-cnt)+i);
+		if (cnt > secbuf->size)
+		{
+			// Received data will not fit in secondary buffer
+			HAL_UART_Receive_IT(huart, (uint8_t*)(huart->pRxBuffPtr-cnt), huart->RxXferSize);
+			secbuf->datacnt = 0;
+			return false;
 		}
-		HAL_UART_Receive_IT(huart, (uint8_t*)(huart->pRxBuffPtr-cnt), 200);
-
-		return true;
+		else
+		{
+			// Copy over to secondary buffer and re-enable interrupts
+			for (int i = 0; i < cnt; ++i) {
+				secbuf->data[i] = *((huart->pRxBuffPtr-cnt)+i);
+			}
+			HAL_UART_Receive_IT(huart, (uint8_t*)(huart->pRxBuffPtr-cnt), huart->RxXferSize);
+			secbuf->datacnt = cnt;
+			return true;
+		}
 	}
 	return false;
 }
@@ -131,22 +147,22 @@ void handleTerminalInput(buffer *inp)
 	char last = inp->data[inp->datacnt-1];
 
 	// Backspace
-	if((last == 0x8) && (termCmdBuf.datacnt > 0))
+	if((last == 0x8) && (termCmdBuf->datacnt > 0))
 	{
 		char bkspace = 0x08;
 		uint8_t msg[5];
 		uint8_t len = sprintf((char*)msg,"%c %c", bkspace, bkspace);
 		HAL_UART_Transmit(hterm, msg, len, 50);
-		--termCmdBuf.datacnt;
+		--termCmdBuf->datacnt;
 	}
 	// Leaving room for NULL char
-	else if((termCmdBuf.datacnt+inp->datacnt) <= (termCmdBuf.size-1))
+	else if((termCmdBuf->datacnt+inp->datacnt) <= (termCmdBuf->size-1))
 	{
 		for (int i = 0; i < inp->datacnt; ++i)
 		{
-			termCmdBuf.data[termCmdBuf.datacnt+i] = inp->data[0+i];
+			termCmdBuf->data[termCmdBuf->datacnt+i] = inp->data[0+i];
 		}
-		termCmdBuf.datacnt += inp->datacnt;
+		termCmdBuf->datacnt += inp->datacnt;
 		HAL_UART_Transmit(hterm, inp->data, inp->datacnt, 50);
 	}
 
@@ -155,8 +171,8 @@ void handleTerminalInput(buffer *inp)
 	if(last == 0xD)
 	{
 		// Remove \r
-		termCmdBuf.data[termCmdBuf.datacnt-1] = 0x0;
-		--termCmdBuf.datacnt;
+		termCmdBuf->data[termCmdBuf->datacnt-1] = 0x0;
+		--termCmdBuf->datacnt;
 
 		terminalProcessCommandBuffer();
 	}
@@ -205,12 +221,12 @@ void terminalProcessCommandBuffer()
 {
 	// Echo command buffer contents
 	terminalPrintNlCr();
-	HAL_UART_Transmit(hterm, termCmdBuf.data, termCmdBuf.datacnt, 50);
+	HAL_UART_Transmit(hterm, termCmdBuf->data, termCmdBuf->datacnt, 50);
 	terminalPrintNlCr();
 
 	// Ensure NULL char at end
-	termCmdBuf.data[termCmdBuf.datacnt] = 0x0;
-	if(!strncmp((char *)termCmdBuf.data, "AT", 2 ))
+	termCmdBuf->data[termCmdBuf->datacnt] = 0x0;
+	if(!strncmp((char *)termCmdBuf->data, "AT", 2 ))
 	{
 		// Generate Xbee AT-CMD
 		terminalPrintLeftArrow();
@@ -222,5 +238,5 @@ void terminalProcessCommandBuffer()
 
 	terminalPrintNlCr();
 	terminalPrintRightArrow();
-	termCmdBuf.datacnt = 0;
+	termCmdBuf->datacnt = 0;
 }

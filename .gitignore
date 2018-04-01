@@ -118,3 +118,4 @@ Src/stm32f3xx_it.c
 Src/system_stm32f3xx.c
 Inc/stm32f3xx_it.h
 Src/main.c
+.settings/org.eclipse.cdt.codan.core.prefs

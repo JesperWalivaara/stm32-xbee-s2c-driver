@@ -24,6 +24,7 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 #include "stm32f3xx_hal.h"
 #include "string.h"
 #include "stdbool.h"
+#include "miscfunc.h"
 
 /*
  * GENERAL SETTINGS
@@ -33,9 +34,10 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 #define MAX_STORED_DEVICES 5
 
 typedef enum {
-	XBEE_OK = 0x0,
-	XBEE_UART_FAILED_SYNC = 0x1,
-	XBEE_GET_LOCAL_SETTINGS_FAILURE = 0x2
+	XBEE_MSG_OK = 0x0,
+	XBEE_ERR_UART_SYNC = 0x1,
+	XBEE_ERR_APIMODE_ENABLE = 0x2,
+	XBEE_MSG_SETTING_CHANGED = 0x3
 } XBEE_STAT;
 
 /*
@@ -170,8 +172,9 @@ typedef struct {
 bool isCoordinator(xbee_module *xbee);
 void xbeeSetDefaultValues(xbee_module *xbee);
 bool xbeeSyncUART();
-bool xbeeGetLocalSettings();
+XBEE_STAT xbeeEnsureAPIMode();
 XBEE_STAT xbeeInit();
 void xbeeEnterCMDMode();
+void xbeeExitCMDMode();
 
 #endif /* XBEE_S2C_LIB_INC_XBEELIB_H_ */
