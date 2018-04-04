@@ -33,6 +33,9 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 
 #define MAX_STORED_DEVICES 5
 
+// Safety margin for guard time when entering commmand mode
+#define XBEE_ADDED_GT_MARGIN 50	// milliseconds
+
 typedef enum {
 	XBEE_MSG_OK = 0x0,
 	XBEE_ERR_UART_SYNC = 0x1,
@@ -176,5 +179,6 @@ XBEE_STAT xbeeEnsureAPIMode();
 XBEE_STAT xbeeInit();
 void xbeeEnterCMDMode();
 void xbeeExitCMDMode();
+void initLocalXbee();
 
 #endif /* XBEE_S2C_LIB_INC_XBEELIB_H_ */

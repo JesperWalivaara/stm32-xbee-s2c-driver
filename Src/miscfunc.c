@@ -20,20 +20,18 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 
 #include "miscfunc.h"
 
-buffer *termCmdBuf;
+buffer *termCache;
 UART_HandleTypeDef *hterm;
 
 /**
  *	Initializes the terminal.
  *
- *	@param *storage, memory location that the terminal can use
- *	@param size, size of storage specified as amount of bytes
- *	@param *huart, STM32 HAL UART handle for the terminal tx/rx
- *
+ *	@param *termCache, data buffer that the terminal can use
+ *	@param *huart, STM32 HAL UART handle for the connection going to the terminal
  */
-void termInit(buffer *termdatabuf, UART_HandleTypeDef *huart)
+void termInit(buffer *termbuf, UART_HandleTypeDef *huart)
 {
-	termCmdBuf = termdatabuf;
+	termCache = termbuf;
 	hterm = huart;
 
 	char msg[50];
@@ -75,7 +73,7 @@ void platformDelayUs(uint32_t udelay)
  *
  *	@param *huart, STM HAL library handle for target uart interface
  *	@param *secbuf, pointer to the secondary storage buffer
- *	@return true if data was read, false otherwise
+ *	@return true if data was read and copied, false otherwise
  *
  */
 bool readAvailableData(UART_HandleTypeDef *huart, buffer *secbuf)
@@ -113,6 +111,7 @@ bool readAvailableData(UART_HandleTypeDef *huart, buffer *secbuf)
 		if (cnt > secbuf->size)
 		{
 			// Received data will not fit in secondary buffer
+			// therefore do not copy over
 			HAL_UART_Receive_IT(huart, (uint8_t*)(huart->pRxBuffPtr-cnt), huart->RxXferSize);
 			secbuf->datacnt = 0;
 			return false;
@@ -147,22 +146,22 @@ void handleTerminalInput(buffer *inp)
 	char last = inp->data[inp->datacnt-1];
 
 	// Backspace
-	if((last == 0x8) && (termCmdBuf->datacnt > 0))
+	if((last == 0x8) && (termCache->datacnt > 0))
 	{
 		char bkspace = 0x08;
 		uint8_t msg[5];
 		uint8_t len = sprintf((char*)msg,"%c %c", bkspace, bkspace);
 		HAL_UART_Transmit(hterm, msg, len, 50);
-		--termCmdBuf->datacnt;
+		--termCache->datacnt;
 	}
 	// Leaving room for NULL char
-	else if((termCmdBuf->datacnt+inp->datacnt) <= (termCmdBuf->size-1))
+	else if((termCache->datacnt+inp->datacnt) <= (termCache->size-1))
 	{
 		for (int i = 0; i < inp->datacnt; ++i)
 		{
-			termCmdBuf->data[termCmdBuf->datacnt+i] = inp->data[0+i];
+			termCache->data[termCache->datacnt+i] = inp->data[0+i];
 		}
-		termCmdBuf->datacnt += inp->datacnt;
+		termCache->datacnt += inp->datacnt;
 		HAL_UART_Transmit(hterm, inp->data, inp->datacnt, 50);
 	}
 
@@ -171,8 +170,8 @@ void handleTerminalInput(buffer *inp)
 	if(last == 0xD)
 	{
 		// Remove \r
-		termCmdBuf->data[termCmdBuf->datacnt-1] = 0x0;
-		--termCmdBuf->datacnt;
+		termCache->data[termCache->datacnt-1] = 0x0;
+		--termCache->datacnt;
 
 		terminalProcessCommandBuffer();
 	}
@@ -221,12 +220,12 @@ void terminalProcessCommandBuffer()
 {
 	// Echo command buffer contents
 	terminalPrintNlCr();
-	HAL_UART_Transmit(hterm, termCmdBuf->data, termCmdBuf->datacnt, 50);
+	HAL_UART_Transmit(hterm, termCache->data, termCache->datacnt, 50);
 	terminalPrintNlCr();
 
 	// Ensure NULL char at end
-	termCmdBuf->data[termCmdBuf->datacnt] = 0x0;
-	if(!strncmp((char *)termCmdBuf->data, "AT", 2 ))
+	termCache->data[termCache->datacnt] = 0x0;
+	if(!strncmp((char *)termCache->data, "AT", 2 ))
 	{
 		// Generate Xbee AT-CMD
 		terminalPrintLeftArrow();
@@ -235,8 +234,10 @@ void terminalProcessCommandBuffer()
 		HAL_UART_Transmit(hterm, msg, len, 50);
 	}
 
-
 	terminalPrintNlCr();
 	terminalPrintRightArrow();
-	termCmdBuf->datacnt = 0;
+	termCache->datacnt = 0;
 }
+
+
+

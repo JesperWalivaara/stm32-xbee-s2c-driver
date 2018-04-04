@@ -31,19 +31,12 @@ typedef struct {
 
 void platformDelayUs(uint32_t udelay);
 bool readAvailableData(UART_HandleTypeDef *huart, buffer *secbuf);
-
 void handleTerminalInput(buffer *inp);
-void termInit(buffer *termdatabuf, UART_HandleTypeDef *huart);
-
-// Public
-
-
-// Private
+void termInit(buffer *termCache, UART_HandleTypeDef *huart);
 void terminalPrintNlCr();
 void terminalPrintRightArrow();
 void terminalPrintLeftArrow();
 void terminalProcessCommandBuffer();
-
 
 #define MAX_TERM_CMD_LEN 100
 #define UART_RXBUF_SIZE 200
